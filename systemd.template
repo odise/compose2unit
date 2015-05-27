@@ -1,0 +1,22 @@
+[Unit]
+Description=Start, stop and restart {{name}} container
+Requires=docker.service {{#links}}{{.}}.service {{/links}}
+After=docker.service {{#links}}{{.}}.service {{/links}}
+
+[Service]
+Restart=always
+
+ExecStartPre=-/usr/bin/docker rm -f %n
+
+ExecStart=/usr/bin/docker run \
+    {{#environment}}-e {{{.}}} {{/environment}}\
+    {{#links}}--link {{.}}:{{.}} {{/links}} \
+    {{#ports}}-p {{.}} {{/ports}} \
+    {{#env_file}}--env-file={{{.}}} {{/env_file}} \
+    --rm --name %n \
+    {{#image}}{{{.}}}{{/image}} {{#command}}{{{.}}}{{/command}}
+
+ExecStop=-/usr/bin/docker stop %n
+
+[Install]
+WantedBy=multi-user.target
