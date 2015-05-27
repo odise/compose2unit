@@ -1,5 +1,4 @@
 VERSION := "v0.0.1"
-
 clean:
 	rm -rf out
 

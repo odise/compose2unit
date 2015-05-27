@@ -9,14 +9,50 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 )
+
+const service_unit = `
+[Unit]
+Description=Start, stop and restart {{name}} container
+Requires=docker.service {{#links}}{{.}} {{/links}}
+After=docker.service {{#links}}{{.}} {{/links}}
+
+[Service]
+Restart=always
+
+ExecStartPre=-/usr/bin/docker rm -f %n
+
+ExecStart=/usr/bin/docker run \
+    {{#environment}}-e {{{.}}} {{/environment}}\
+    {{#links}}--link {{.}}:{{.}} {{/links}} \
+    {{#ports}}-p {{.}} {{/ports}} \
+    {{#env_file}}--env-file={{{.}}} {{/env_file}} \
+    --rm --name %n \
+    {{#image}}{{{.}}}{{/image}} {{#command}}{{{.}}}{{/command}}
+
+ExecStop=-/usr/bin/docker stop %n
+
+[Install]
+WantedBy=multi-user.target
+`
+const oneshot_unit = `
+[Unit]
+Description=Start a oneshot for {{name}} container
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/docker exec \
+    {{#exec}}{{{.}}}{{/exec}} {{#command}}{{{.}}}{{/command}}
+`
 
 func main() {
 
 	var (
 		help      = flag.Bool("h", false, "display usage")
 		compose   = flag.String("c", "", "compose file")
-		template  = flag.String("t", "", "template source file")
+		template  = flag.String("t", "", "template source file or one of [int:service_unit | int:oneshot_unit]")
 		targetdir = flag.String("o", "/etc/systemd/system", "target directory for unit files")
 	)
 
@@ -65,17 +101,28 @@ func main() {
 
 		}
 
-		if _, ok := value.(map[interface{}]interface{})["image"]; ok {
+		if _, ok := value.(map[interface{}]interface{})["build"]; ok {
 
-			data := mustache.RenderFile(*template, value.(map[interface{}]interface{}))
+			fmt.Println("Container build is not supported!", key, ":", value.(map[interface{}]interface{}))
+		} else {
+
+			var data string
+			if strings.Contains(*template, "int:service_unit") {
+
+				data = mustache.Render(service_unit, value.(map[interface{}]interface{}))
+			} else if strings.Contains(*template, "int:oneshot_unit") {
+
+				data = mustache.Render(oneshot_unit, value.(map[interface{}]interface{}))
+			} else {
+
+				data = mustache.RenderFile(*template, value.(map[interface{}]interface{}))
+			}
 			println(data)
-			fname := *targetdir + "/" + key + ".service"
+			fname := *targetdir + "/" + key
 			err := ioutil.WriteFile(fname, []byte(data), 0644)
 			if err != nil {
 				panic(err)
 			}
-		} else {
-			fmt.Println("Container definition doesn't contain 'image' property!", key, ":", value.(map[interface{}]interface{}))
 		}
 
 	}
